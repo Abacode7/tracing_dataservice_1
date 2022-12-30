@@ -4,6 +4,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
 
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.cloud.sleuth.Span;
+import org.springframework.cloud.sleuth.Tracer;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestMethod;
@@ -13,6 +16,9 @@ import org.springframework.web.bind.annotation.RestController;
 public class ContactController {
 
     List<ContactDetails> details;
+
+    @Autowired
+    private Tracer tracer;
 
     public ContactController() {
 
@@ -26,14 +32,26 @@ public class ContactController {
     @RequestMapping(value="/customer/{cid}/contactdetails", method=RequestMethod.GET)
 	public ContactDetails getCustomerContactDetails(@PathVariable String cid) throws InterruptedException {
 
-        //add arbitrary latency
-		Random r = new Random();
-		int multiplier = r.nextInt(5) * 1000;
-		System.out.println("multiplier: " + multiplier);
-		Thread.sleep(multiplier);
+        Span dbSpan = this.tracer.nextSpan().name("DBLookUp");
 
-        return details.stream().filter(detail -> cid.equals(detail.getContactId())).findAny().orElse(null);   
-             
+        try(Tracer.SpanInScope runningSpan = this.tracer.withSpan(dbSpan.start())){
+
+            dbSpan.tag("call", "sql-database");
+
+            //add arbitrary latency
+            Random r = new Random();
+            int multiplier = r.nextInt(5) * 1000;
+            System.out.println("multiplier: " + multiplier);
+            Thread.sleep(multiplier);
+
+            dbSpan.event("db lookup complete!");
+
+        }finally{
+            dbSpan.end();
+        }
+        
+        return details.stream().filter(detail -> cid.equals(detail.getContactId())).findAny().orElse(null);
+
     }
     
 }
